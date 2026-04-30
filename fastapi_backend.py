@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("App started")
-    app.state.model = load_model("base")
+    app.state.model = load_model()
     yield
 
 
