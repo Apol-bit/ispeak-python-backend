@@ -26,7 +26,7 @@ def _get_classifier(model_path: str):
 def analyze_fillers(
     word_segments: List[Dict[str, Any]],
     model_path: str = "models/filler_model_best",
-    confidence_threshold: float = 0.70,
+    confidence_threshold: float = 0.50, # LOWERED THRESHOLD (Was 0.70)
 ) -> Dict[str, Any]:
     """
     Detect filler words from a list of word segments.

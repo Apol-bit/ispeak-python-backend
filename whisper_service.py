@@ -1,4 +1,3 @@
-#whisper_service.py
 from __future__ import annotations
 
 import numpy as np
@@ -28,6 +27,10 @@ _SILENCE_RESPONSE = {
         "clarity": 0,
         "pacing": 0,
         "energy": 0,
+    },
+    "pacing": {
+        "wpm": 0.0,
+        "message": "No speech detected"
     },
     "pronunciation": {
         "score": 0,
@@ -235,6 +238,10 @@ def generate_full_analysis(file_path: str, model) -> Dict[str, Any]:
             "clarity":    clarity_score,
             "pacing":     pacing_score,
             "energy":     energy_score,
+        },
+        "pacing": {
+            "wpm": pacing_stats.get("wpm", 0.0) if isinstance(pacing_stats, dict) else 0.0,
+            "message": pacing_stats.get("pacing_status", "") if isinstance(pacing_stats, dict) else "Analysis failed"
         },
         "pronunciation": {
             "score":             pronunciation_score,

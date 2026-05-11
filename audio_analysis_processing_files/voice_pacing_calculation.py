@@ -18,6 +18,17 @@ def calculate_pacing(
     if audio_duration_seconds <= 0:
         raise ValueError("Invalid audio duration")  # prevent division errors
 
+    # ---> NEW: Minimum audio length check for pacing <---
+    # You cannot accurately judge someone's "pace" in less than 5 seconds.
+    if audio_duration_seconds < 5.0:
+        logger.info("Audio too short for accurate pacing calculation.")
+        return {
+            "wpm": 0.0,
+            "articulation_rate": 0.0,
+            "pacing_status": "Insufficient speech",
+            "total_pause_seconds": 0.0,
+        }
+
     if not whisper_segments:
         return {
             "wpm": 0.0,  # no words
@@ -73,6 +84,10 @@ def calculate_pacing(
 
     wpm = total_words / real_minutes  # words per minute (overall)
     articulation_rate = total_words / speaking_minutes  # words per speaking time
+
+    # ---> NEW: Cap the absolute max WPM to prevent absurd numbers <---
+    # The world record for fast talking is ~600 wpm. Normal is 150.
+    wpm = min(wpm, 300.0)
 
     # ---------- PACING CLASSIFICATION ----------
     pacing_status = (
