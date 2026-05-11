@@ -1,3 +1,4 @@
+# voice_clarity_detection.py
 from __future__ import annotations  # allows modern type hints (like tuple[int, int]) in older Python
 
 from dataclasses import dataclass  # for creating simple config class

@@ -1,3 +1,4 @@
+# voice_energy_analyze.py
 import numpy as np  # numerical operations
 import librosa  # audio processing library
 from typing import Dict, List  # type hints
@@ -5,10 +6,10 @@ from typing import Dict, List  # type hints
 
 # ---------------- CONFIG ----------------
 
-WHISPER_THRESHOLD_DB = -40.0  # below this = whispering
-SHOUT_THRESHOLD_DB = -10.0  # above this = shouting
+WHISPER_THRESHOLD_DB = -30.0  # below this = whispering
+SHOUT_THRESHOLD_DB = -7.0  # above this = shouting
 
-LOW_VARIATION_DB = 12.0  # how much loudness changes over time. variation < 12 dB → speech is flat / dull. talks like robot.
+LOW_VARIATION_DB = 6.0  # how much loudness changes over time. variation < 12 dB → speech is flat / dull. talks like robot.
 MONOTONE_PITCH_STD_THRESHOLD = 20.0  # how much pitch (voice tone) changes. if < 20 Hz → monotone (boring, flat, no emotion).
 
 MIN_ACTIVE_RATIO = 0.10  # 0.10 = at least 10% of audio must be non-silent. If below this: Audio is treated as mostly silence

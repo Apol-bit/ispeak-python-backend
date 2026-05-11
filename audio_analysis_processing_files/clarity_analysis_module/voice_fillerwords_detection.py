@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 _classifier = None   # lazy-loaded singleton
 
-
 def _get_classifier(model_path: str):
     global _classifier
     if _classifier is None:
@@ -48,7 +47,7 @@ def analyze_fillers(
             "filler_count": 0,
             "filler_rate": 0.0,
             "filler_words": [],
-            "filler_score": 100,
+            "filler_score": 0,      
             "message": "No speech detected",
         }
 
@@ -63,7 +62,7 @@ def analyze_fillers(
             "filler_count": 0,
             "filler_rate": 0.0,
             "filler_words": [],
-            "filler_score": 100,
+            "filler_score": 0,       
             "message": "Analysis failed",
         }
 
