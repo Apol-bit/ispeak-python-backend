@@ -13,6 +13,36 @@ from audio_analysis_processing_files.clarity_analysis_module.voice_fillerwords_d
 
 logger = logging.getLogger(__name__)
 
+# Minimum RMS to treat audio as containing real speech.
+# 1e-4 was far too low — background noise easily exceeds it.
+RMS_SILENCE_THRESHOLD = 0.01
+
+# Minimum real words required after transcription.
+# Guards against Whisper hallucinating text on noise.
+MIN_WORD_COUNT = 3
+
+_SILENCE_RESPONSE = {
+    "transcription": "",
+    "scores": {
+        "overall": 0,
+        "clarity": 0,
+        "pacing": 0,
+        "energy": 0,
+    },
+    "pronunciation": {
+        "score": 0,
+        "message": "No speech detected",
+        "problematic_words": [],
+    },
+    "fillers": {
+        "score": 0,
+        "count": 0,
+        "rate": 0.0,
+        "words": [],
+        "message": "No speech detected",
+    },
+}
+
 
 def _extract_word_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Flatten and remap Whisper word segments for pronunciation analysis."""
@@ -68,7 +98,7 @@ def _compute_energy_score(energy_stats: Dict[str, Any]) -> float:
     - is_monotone: penalize monotone pitch
     """
     score = 100.0
-    
+
     loudness_status = energy_stats.get("loudness_status", "")
     if loudness_status == "Too quiet (whispering)":
         score -= 40.0
@@ -121,41 +151,42 @@ def generate_full_analysis(file_path: str, model) -> Dict[str, Any]:
     y, sr = librosa.load(file_path, sr=16000, mono=True)
 
     # ---------- SILENCE GATE ----------
+    # Raised from 1e-4 to 0.01 — background noise easily clears the old threshold.
     rms = float(np.sqrt(np.mean(y ** 2)))
-    logger.info("Audio RMS value: %f", rms)  # log RMS so we can tune threshold
+    logger.info("Audio RMS value: %f", rms)
 
-    if rms < 1e-4:  # lowered from 1e-3 to be less aggressive
-        return {
-            "transcription": "",
-            "scores": {
-                "overall": 0,
-                "clarity": 0,
-                "pacing": 0,
-                "energy": 0,
-            },
-            "pronunciation": {
-                "score": 0,
-                "message": "No speech detected",
-                "problematic_words": [],
-            },
-            "fillers": {
-                "score": 0,
-                "count": 0,
-                "rate": 0.0,
-                "words": [],
-                "message": "No speech detected",
-            },
-        }
+    if rms < RMS_SILENCE_THRESHOLD:
+        logger.info("RMS %.4f below silence threshold %.4f — skipping analysis.", rms, RMS_SILENCE_THRESHOLD)
+        return dict(_SILENCE_RESPONSE)
 
     # ---------- NORMALIZE LOUDNESS ----------
-    if rms > 0:
-        y = y * (0.05 / rms)
+    # Only normalize after the silence gate so we don't amplify pure noise
+    # into something that fools Whisper and the energy scorer.
+    y = y * (0.05 / rms)
 
     # ---------- TRANSCRIBE ----------
     transcription = model.transcribe(file_path, word_timestamps=True)
 
-    text: str = transcription.get("text", "")
+    text: str = transcription.get("text", "").strip()
     segments: List[Dict[str, Any]] = transcription.get("segments", [])
+
+    # ---------- HALLUCINATION GUARD ----------
+    # Whisper is known to generate phantom words on noise/silence.
+    # Reject if the transcript is empty or suspiciously short.
+    word_count = len(text.split())
+    if not text or word_count < MIN_WORD_COUNT:
+        logger.info(
+            "Transcript too short (%d word(s): %r) — treating as no speech.",
+            word_count, text,
+        )
+        return dict(_SILENCE_RESPONSE)
+
+    # Also reject if Whisper returned text but produced no word-level timestamps,
+    # which is another hallucination signal.
+    word_segments = _extract_word_segments(segments)
+    if not word_segments:
+        logger.info("No word-level timestamps returned by Whisper — treating as no speech.")
+        return dict(_SILENCE_RESPONSE)
 
     # ---------- AUDIO DURATION ----------
     audio_duration = transcription.get("duration")
@@ -180,7 +211,6 @@ def generate_full_analysis(file_path: str, model) -> Dict[str, Any]:
         pacing_score = 0.0
 
     # ---------- PRONUNCIATION ----------
-    word_segments = _extract_word_segments(segments)
     pronunciation_stats = analyze_pronunciation(word_segments)
     pronunciation_score = float(pronunciation_stats.get("pronunciation_score", 0))
 

@@ -10,7 +10,8 @@ class OptimizedONNXWhisper:
         self.processor = WhisperProcessor.from_pretrained(model_path)
         self.model = ORTModelForSpeechSeq2Seq.from_pretrained(
             model_path, 
-            provider="CUDAExecutionProvider" # This forces the GPU to take over!
+            provider="CUDAExecutionProvider", # This forces the GPU to take over!
+            use_merged=False
         )
         
         # Give the dummy wrapper a copy of the config so the pipeline doesn't crash

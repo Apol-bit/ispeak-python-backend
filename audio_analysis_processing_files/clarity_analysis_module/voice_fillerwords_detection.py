@@ -7,7 +7,8 @@ from transformers import pipeline
 
 logger = logging.getLogger(__name__)
 
-_classifier = None   # lazy-loaded singleton
+_classifier = None  # lazy-loaded singleton
+
 
 def _get_classifier(model_path: str):
     global _classifier
@@ -34,21 +35,28 @@ def analyze_fillers(
 
     Returns:
         {
-            "filler_count":      int,
-            "filler_rate":       float,   # fillers per 100 words
-            "filler_words":      List[dict],
-            "filler_score":      int,     # 0-100, 100 = no fillers
-            "message":           str,
+            "filler_count":  int,
+            "filler_rate":   float,  # fillers per 100 words
+            "filler_words":  List[dict],
+            "filler_score":  int,    # 0–100, 100 = no fillers
+            "message":       str,
         }
     """
-    words = [w.get("text", "").strip() for w in word_segments if w.get("text", "").strip()]
+    words = [
+        w.get("text", "").strip()
+        for w in word_segments
+        if w.get("text", "").strip()
+    ]
+
+    # No speech → no fillers → perfect filler score.
+    # Was returning filler_score=0 here, which incorrectly dragged clarity down.
     if not words:
         return {
             "filler_count": 0,
-            "filler_rate": 0.0,
+            "filler_rate":  0.0,
             "filler_words": [],
-            "filler_score": 0,      
-            "message": "No speech detected",
+            "filler_score": 100,
+            "message":      "No speech detected",
         }
 
     sentence = " ".join(words)
@@ -58,12 +66,14 @@ def analyze_fillers(
         predictions = clf(sentence)
     except Exception as e:
         logger.error("Filler detection failed: %s", e)
+        # Analysis failed → do not penalize the speaker; return neutral score.
+        # Was returning filler_score=0, unfairly tanking clarity on model errors.
         return {
             "filler_count": 0,
-            "filler_rate": 0.0,
+            "filler_rate":  0.0,
             "filler_words": [],
-            "filler_score": 0,       
-            "message": "Analysis failed",
+            "filler_score": 100,
+            "message":      "Analysis failed",
         }
 
     flagged = [
@@ -76,8 +86,19 @@ def analyze_fillers(
     filler_count = len(flagged)
     filler_rate  = round((filler_count / total_words) * 100, 1)
 
-    # Score: 100 at 0 fillers, drops toward 0 at ~30% filler rate
-    filler_score = max(0, round(100 - (filler_rate / 30) * 100))
+    # Score formula:
+    # Old: 100 - (filler_rate / 30) * 100
+    #   → at 10% fillers score was already ~67, too punishing for moderate use.
+    # New: two-stage curve
+    #   - 0–5%   fillers: score stays near 100 (minor hesitations are natural)
+    #   - 5–20%  fillers: linear drop from 100 → 50
+    #   - 20%+   fillers: linear drop from 50 → 0 (severe)
+    if filler_rate <= 5.0:
+        filler_score = round(100 - (filler_rate / 5.0) * 10)   # 100 → 90
+    elif filler_rate <= 20.0:
+        filler_score = round(90 - ((filler_rate - 5.0) / 15.0) * 40)  # 90 → 50
+    else:
+        filler_score = round(max(0, 50 - ((filler_rate - 20.0) / 20.0) * 50))  # 50 → 0
 
     if filler_rate == 0:
         message = "No filler words detected"

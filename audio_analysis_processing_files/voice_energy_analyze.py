@@ -9,26 +9,46 @@ from typing import Dict, List  # type hints
 WHISPER_THRESHOLD_DB = -30.0  # below this = whispering
 SHOUT_THRESHOLD_DB = -7.0  # above this = shouting
 
-LOW_VARIATION_DB = 6.0  # how much loudness changes over time. variation < 12 dB → speech is flat / dull. talks like robot.
-MONOTONE_PITCH_STD_THRESHOLD = 20.0  # how much pitch (voice tone) changes. if < 20 Hz → monotone (boring, flat, no emotion).
+LOW_VARIATION_DB = 6.0  # variation < 6 dB → speech is flat / dull
+MONOTONE_PITCH_STD_THRESHOLD = 20.0  # pitch std < 20 Hz → monotone
 
-MIN_ACTIVE_RATIO = 0.10  # 0.10 = at least 10% of audio must be non-silent. If below this: Audio is treated as mostly silence
-MIN_FRAMES_FOR_ROBUST_PERCENTILE = 50  # min frames for stable percentile calc. how much data needed before trusting advanced calculations
+MIN_ACTIVE_RATIO = 0.10  # at least 10% of frames must be non-silent
+MIN_FRAMES_FOR_ROBUST_PERCENTILE = 50  # min frames for stable percentile calc
 
-DEFAULT_FRAME_LENGTH = 1024  # frame size for analysis. how big each frame size is
-DEFAULT_HOP_LENGTH = 256  # step size between frames. how much each frame size move each step (creates overlap)
+DEFAULT_FRAME_LENGTH = 1024  # frame size for analysis
+DEFAULT_HOP_LENGTH = 256  # step size between frames
+
+# Raised from 1e-4: background noise RMS easily clears the old value.
+# This must be consistent with RMS_SILENCE_THRESHOLD in whisper_service.py.
+# Note: analyze_energy receives the *normalized* signal (scaled to RMS ~0.05),
+# so this threshold is expressed in normalized amplitude units.
+FRAME_SILENCE_THRESHOLD = 0.02
 
 
 # ---------------- GLOBAL ANALYSIS ----------------
 def analyze_energy(
-    y: np.ndarray,  # audio signal
+    y: np.ndarray,  # audio signal (already normalized by caller)
     sr: int,  # sample rate
-    silence_threshold: float = 1e-4,  # threshold to detect silence
     frame_length: int = DEFAULT_FRAME_LENGTH,  # frame size
     hop_length: int = DEFAULT_HOP_LENGTH,  # step size
 ) -> Dict:
 
-    # compute RMS energy per frame
+    # ---------- PRE-ANALYSIS RMS GUARD ----------
+    # whisper_service normalizes y to RMS ~0.05 before calling us.
+    # Real speech after normalization sits at ~0.05; background noise that
+    # slipped through will be amplified to a similar level, so we re-check
+    # the raw signal RMS here as a secondary gate before any scoring.
+    raw_rms = float(np.sqrt(np.mean(y ** 2)))
+    if raw_rms < FRAME_SILENCE_THRESHOLD:
+        return {
+            "average_volume_db": -80.0,
+            "dynamic_range": 0.0,
+            "loudness_status": "Silence",
+            "is_low_variation": True,
+            "is_monotone": True,
+        }
+
+    # ---------- FRAME-LEVEL RMS ----------
     rms_energy = librosa.feature.rms(
         y=y,
         frame_length=frame_length,
@@ -36,87 +56,71 @@ def analyze_energy(
     ).squeeze()  # remove extra dimensions
 
     # ratio of frames above silence threshold
-    active_ratio = float(np.mean(rms_energy > silence_threshold))
+    active_ratio = float(np.mean(rms_energy > FRAME_SILENCE_THRESHOLD))
 
-    # if mostly silence
+    # if mostly silence across frames
     if active_ratio < MIN_ACTIVE_RATIO:
         return {
-            "average_volume_db": -80.0,  # very low volume
-            "dynamic_range": 0.0,  # no variation
-            "loudness_status": "Silence",  # label
-            "is_low_variation": True,  # flat signal
-            "is_monotone": True,  # no pitch variation
+            "average_volume_db": -80.0,
+            "dynamic_range": 0.0,
+            "loudness_status": "Silence",
+            "is_low_variation": True,
+            "is_monotone": True,
         }
 
-    # compute average power
+    # ---------- LOUDNESS ----------
     avg_power = np.mean(rms_energy ** 2)
-
-    # convert to decibels
     average_db = float(10 * np.log10(max(avg_power, 1e-10)))
 
-    # classify loudness
     if average_db < WHISPER_THRESHOLD_DB:
         loudness_status = "Too quiet (whispering)"
-
     elif average_db > SHOUT_THRESHOLD_DB:
         loudness_status = "Too loud (shouting)"
-
     else:
         loudness_status = "Normal volume"
 
-    # avoid log(0)
+    # ---------- DYNAMIC RANGE ----------
     rms_energy = np.clip(rms_energy, 1e-10, None)
-
-    # convert amplitude to dB scale
     db_levels = librosa.amplitude_to_db(rms_energy, ref=1.0)
 
-    # compute dynamic range if enough data
     if len(db_levels) >= 2:
         if len(db_levels) >= MIN_FRAMES_FOR_ROBUST_PERCENTILE:
-            low_percentile, high_percentile = 5, 95  # robust percentiles
+            low_percentile, high_percentile = 5, 95
         else:
-            low_percentile, high_percentile = 0, 100  # full range
+            low_percentile, high_percentile = 0, 100
 
-        # dynamic range = high percentile - low percentile
         dynamic_range = float(
             np.percentile(db_levels, high_percentile)
             - np.percentile(db_levels, low_percentile)
         )
     else:
-        dynamic_range = 0.0  # not enough data
+        dynamic_range = 0.0
 
-    # check if variation is low
     is_low_variation = dynamic_range < LOW_VARIATION_DB
 
+    # ---------- PITCH ----------
     try:
-        # estimate pitch using pyin
         f0, voiced_flag, _ = librosa.pyin(
             y,
-            fmin=librosa.note_to_hz("C2"),  # low pitch bound
-            fmax=librosa.note_to_hz("C7"),  # high pitch bound
+            fmin=librosa.note_to_hz("C2"),
+            fmax=librosa.note_to_hz("C7"),
         )
 
-        # keep only voiced frames
         voiced_f0 = f0[voiced_flag]
-
-        # compute pitch variation (std deviation)
         pitch_std = float(np.std(voiced_f0)) if len(voiced_f0) > 0 else 0.0
-
-        # monotone if low variation
         is_monotone = pitch_std < MONOTONE_PITCH_STD_THRESHOLD
 
     except Exception:
-        pitch_std = 0.0  # fallback if error
-        is_monotone = True  # assume monotone
+        pitch_std = 0.0
+        is_monotone = True
 
-    # return results
     return {
-        "average_volume_db": round(average_db, 2),  # avg loudness
-        "dynamic_range": round(dynamic_range, 2),  # variation
-        "loudness_status": loudness_status,  # label
-        "is_low_variation": is_low_variation,  # low variation flag
-        "pitch_variation_hz": round(pitch_std, 2),  # pitch std
-        "is_monotone": is_monotone,  # monotone flag
+        "average_volume_db": round(average_db, 2),
+        "dynamic_range": round(dynamic_range, 2),
+        "loudness_status": loudness_status,
+        "is_low_variation": is_low_variation,
+        "pitch_variation_hz": round(pitch_std, 2),
+        "is_monotone": is_monotone,
     }
 
 
@@ -132,56 +136,44 @@ def compute_segment_db(y_segment):
     if len(y_segment) == 0:
         return -80.0  # empty segment → very low dB
 
-    # compute root-mean-square (RMS) for segment
     segment_rms = librosa.feature.rms(y=y_segment).squeeze()
 
     if len(segment_rms) == 0:
-        return -80.0  # no frames → low dB
+        return -80.0
 
-    # compute average power
     avg_power = np.mean(segment_rms ** 2)
-
-    # convert to dB
     db = 10 * np.log10(max(avg_power, 1e-10))
     return float(db)
 
 
 def classify_loudness(db):
     if db < WHISPER_THRESHOLD_DB:
-        return "whisper"  # too quiet
+        return "whisper"
     elif db > SHOUT_THRESHOLD_DB:
-        return "shout"  # too loud
+        return "shout"
     else:
-        return "normal"  # acceptable
+        return "normal"
 
 
 def analyze_per_word(y, sr, whisper_result) -> List[Dict]:
-    word_results = []  # store results
+    word_results = []
 
-    # loop through segments from whisper
     for segment in whisper_result.get("segments", []):
-        # loop through words in each segment
         for word_info in segment.get("words", []):
-            start = word_info["start"]  # word start time
-            end = word_info["end"]  # word end time
-            word = word_info["word"]  # word text
+            start = word_info["start"]
+            end = word_info["end"]
+            word = word_info["word"]
 
-            # extract audio for this word
             y_segment = extract_audio_segment(y, sr, start, end)
-
-            # compute loudness
             db = compute_segment_db(y_segment)
-
-            # classify loudness
             label = classify_loudness(db)
 
-            # store result
             word_results.append({
                 "word": word,
-                "start": round(start, 2),  # rounded start time
-                "end": round(end, 2),  # rounded end time
-                "volume_db": round(db, 2),  # loudness in dB
-                "loudness": label  # label
+                "start": round(start, 2),
+                "end": round(end, 2),
+                "volume_db": round(db, 2),
+                "loudness": label,
             })
 
-    return word_results  # return all word data
+    return word_results

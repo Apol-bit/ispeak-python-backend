@@ -1,29 +1,32 @@
 # voice_clarity_detection.py
-from __future__ import annotations  # allows modern type hints (like tuple[int, int]) in older Python
+from __future__ import annotations
 
-from dataclasses import dataclass  # for creating simple config class
-from typing import List, Dict, Any  # type hints
-import statistics  # for mean calculation
-import logging  # for logging warnings
+from dataclasses import dataclass
+from typing import List, Dict, Any
+import statistics
+import logging
 
-logger = logging.getLogger(__name__)  # create logger for this module
+logger = logging.getLogger(__name__)
 
 
-# Config class for tuning scoring behavior
 @dataclass
 class PronunciationConfig:
-    minimum_confidence: float = 0.75  # minimum acceptable confidence
+    minimum_confidence: float = 0.75   # minimum acceptable confidence
     minimum_word_duration: float = 0.08  # shortest expected word duration
-    maximum_word_duration: float = 1.2  # longest expected word duration
+    maximum_word_duration: float = 1.2   # longest expected word duration
 
     confidence_weight: float = 0.7  # weight for confidence score
-    duration_weight: float = 0.3  # weight for duration score
+    duration_weight: float = 0.3    # weight for duration score
+
+    # Threshold below which a duration score is flagged as "unusual".
+    # Was 0.95 — far too strict, causing normal words to be flagged.
+    # 0.75 only flags genuinely rushed/dragged words.
+    duration_flag_threshold: float = 0.75
 
 
-DEFAULT_CONFIG = PronunciationConfig()  # default config instance
+DEFAULT_CONFIG = PronunciationConfig()
 
 
-# Score thresholds → feedback message
 SCORE_THRESHOLDS = [
     (85, "Excellent pronunciation"),
     (70, "Good pronunciation with minor issues"),
@@ -32,47 +35,41 @@ SCORE_THRESHOLDS = [
 ]
 
 
-# Normalize weights so they sum to 1
 def _normalize_weights(cfg: PronunciationConfig) -> tuple[float, float]:
-    total = cfg.confidence_weight + cfg.duration_weight  # sum weights
-
+    total = cfg.confidence_weight + cfg.duration_weight
     if total <= 0:
-        raise ValueError("Invalid scoring weights")  # prevent divide by zero
-
+        raise ValueError("Invalid scoring weights")
     return (
-        cfg.confidence_weight / total,  # normalized confidence weight
-        cfg.duration_weight / total,  # normalized duration weight
+        cfg.confidence_weight / total,
+        cfg.duration_weight / total,
     )
 
 
-# Safely convert confidence to float and clamp to [0,1]
 def _safe_confidence(value: Any) -> float:
     try:
-        confidence = float(value)  # try converting
+        confidence = float(value)
     except (TypeError, ValueError):
-        return 0.0  # fallback if invalid
+        return 0.0
+    return max(0.0, min(confidence, 1.0))
 
-    return max(0.0, min(confidence, 1.0))  # clamp between 0 and 1
 
-
-# Compute duration score (0–1). How fast the word is spoken.
 def _duration_score(duration: float, cfg: PronunciationConfig) -> float:
-
     if duration <= 0:
-        return 0.0  # invalid duration
+        return 0.0
 
     if duration < cfg.minimum_word_duration:
-        return duration / cfg.minimum_word_duration  # scale up short words
+        # Scale linearly: 0 duration → 0, at minimum → 1.0
+        return duration / cfg.minimum_word_duration
 
     if duration > cfg.maximum_word_duration:
-        excess_duration = duration - cfg.maximum_word_duration  # extra time
-        penalty_score = excess_duration / cfg.maximum_word_duration  # penalty ratio
-        return max(0.5, 1.0 - penalty_score)  # reduce score but not below 0.5
+        excess_duration = duration - cfg.maximum_word_duration
+        penalty_score = excess_duration / cfg.maximum_word_duration
+        # Floor at 0.5 — even very long words aren't catastrophic
+        return max(0.5, 1.0 - penalty_score)
 
-    return 1.0  # perfect duration
+    return 1.0  # within normal range → perfect score
 
 
-# Get feedback message based on score
 def _feedback_message(score: int) -> str:
     return next(
         feedback for threshold, feedback in SCORE_THRESHOLDS
@@ -80,72 +77,62 @@ def _feedback_message(score: int) -> str:
     )
 
 
-# Main function
 def analyze_pronunciation(
     word_segments: List[Dict[str, Any]],
-    config: PronunciationConfig = DEFAULT_CONFIG
+    config: PronunciationConfig = DEFAULT_CONFIG,
 ) -> Dict[str, Any]:
 
-    # Handle empty input
     if not word_segments:
         return {
             "pronunciation_score": 0,
             "problematic_words": [],
-            "message": "No speech detected"
+            "message": "No speech detected",
         }
 
-    conf_weight, dur_weight = _normalize_weights(config)  # get normalized weights
+    conf_weight, dur_weight = _normalize_weights(config)
 
-    scores: List[float] = []  # store word scores
-    problematic_words: List[Dict[str, Any]] = []  # store issues
+    scores: List[float] = []
+    problematic_words: List[Dict[str, Any]] = []
 
     for word in word_segments:
-
-        text = str(word.get("text", "")).strip()  # get word text
-        start = word.get("start")  # start time
-        end = word.get("end")  # end time
+        text = str(word.get("text", "")).strip()
+        start = word.get("start")
+        end = word.get("end")
 
         if not text:
-            continue  # skip empty words
+            continue
 
-        # Validate timestamps
         if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
             logger.warning("Invalid timestamps for word: %s", text)
             continue
 
         if end < start:
             logger.warning("Inverted timestamps for word: %s", text)
-            duration = 0.0  # invalid duration
+            duration = 0.0
             inverted = True
         else:
-            duration = end - start  # compute duration
+            duration = end - start
             inverted = False
 
-        confidence = _safe_confidence(word.get("confidence"))  # clean confidence
+        confidence = _safe_confidence(word.get("confidence"))
+        dur_score = _duration_score(duration, config)
 
-        dur_score = _duration_score(duration, config)  # compute duration score
+        word_score = conf_weight * confidence + dur_weight * dur_score
+        scores.append(word_score)
 
-        # Final word score (weighted)
-        word_score = (
-            conf_weight * confidence +
-            dur_weight * dur_score
-        )
-
-        scores.append(word_score)  # store score
-
-        # Detect issues
         issues = []
 
         if confidence < config.minimum_confidence:
             issues.append("low confidence")
 
-        if dur_score < 0.95:
+        # Fixed: was 0.95 — flagged almost every normal word as problematic.
+        # Now uses configurable duration_flag_threshold (default 0.75).
+        if dur_score < config.duration_flag_threshold:
             issues.append("unusual duration")
 
         if inverted:
             issues.append("invalid timestamps")
 
-        # Save problematic words
         if issues:
             problematic_words.append({
                 "word": text,
@@ -154,18 +141,17 @@ def analyze_pronunciation(
                 "issue": ", ".join(issues),
             })
 
-    # No valid scores
     if not scores:
         return {
             "pronunciation_score": 0,
             "problematic_words": [],
-            "message": "No valid words analyzed"
+            "message": "No valid words analyzed",
         }
 
-    final_score = round(statistics.mean(scores) * 100)  # average → percentage
+    final_score = round(statistics.mean(scores) * 100)
 
     return {
         "pronunciation_score": final_score,
         "problematic_words": problematic_words,
-        "message": _feedback_message(final_score),  # final feedback
+        "message": _feedback_message(final_score),
     }
