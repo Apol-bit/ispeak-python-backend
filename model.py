@@ -1,16 +1,26 @@
 # model.py
 import os
 import librosa
+import onnxruntime as ort
 from transformers import pipeline, WhisperProcessor
 from optimum.onnxruntime import ORTModelForSpeechSeq2Seq
 
 class OptimizedONNXWhisper:
     def __init__(self, model_path: str):
-        print(f"Loading custom ONNX model from {model_path} into RTX 4050...")
+        # Pick the best available execution provider
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" in available:
+            provider = "CUDAExecutionProvider"
+            device_label = "GPU (CUDA)"
+        else:
+            provider = "CPUExecutionProvider"
+            device_label = "CPU"
+
+        print(f"Loading custom ONNX model from {model_path} on {device_label}...")
         self.processor = WhisperProcessor.from_pretrained(model_path)
         self.model = ORTModelForSpeechSeq2Seq.from_pretrained(
             model_path, 
-            provider="CUDAExecutionProvider", # This forces the GPU to take over!
+            provider=provider,
             use_merged=False
         )
         

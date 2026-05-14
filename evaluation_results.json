@@ -1,0 +1,32 @@
+[
+  {
+    "file": "temporary_audio.aac",
+    "path": "temp_audio_folder\\temporary_audio.aac",
+    "duration_seconds": 16.76,
+    "rms": 0.015871,
+    "processing_time_seconds": 2.83,
+    "transcription": "",
+    "scores": {
+      "overall": 0,
+      "clarity": 0,
+      "pacing": 0,
+      "energy": 0
+    },
+    "pacing": {
+      "wpm": 0.0,
+      "message": "No speech detected"
+    },
+    "pronunciation": {
+      "score": 0,
+      "message": "No speech detected",
+      "problematic_words": []
+    },
+    "fillers": {
+      "score": 0,
+      "count": 0,
+      "rate": 0.0,
+      "words": [],
+      "message": "No speech detected"
+    }
+  }
+]
