@@ -6,11 +6,11 @@ from typing import Dict, List  # type hints
 
 # ---------------- CONFIG ----------------
 
-WHISPER_THRESHOLD_DB = -30.0  # below this = whispering
-SHOUT_THRESHOLD_DB = -7.0  # above this = shouting
+WHISPER_THRESHOLD_DB = -20.0  # below this = whispering
+SHOUT_THRESHOLD_DB = -8.0  # above this = shouting
 
-LOW_VARIATION_DB = 6.0  # variation < 6 dB → speech is flat / dull
-MONOTONE_PITCH_STD_THRESHOLD = 20.0  # pitch std < 20 Hz → monotone
+LOW_VARIATION_DB = 10.0  # variation < 10 dB → speech is flat / dull
+MONOTONE_PITCH_STD_THRESHOLD = 25.0  # pitch std < 25 Hz → monotone
 
 MIN_ACTIVE_RATIO = 0.10  # at least 10% of frames must be non-silent
 MIN_FRAMES_FOR_ROBUST_PERCENTILE = 50  # min frames for stable percentile calc

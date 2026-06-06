@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)  # create logger
 def calculate_pacing(
     whisper_segments: List[Dict],  # list of speech segments
     audio_duration_seconds: float,  # total audio length
-    slow_speech: int = 110,  # slow speech threshold (WPM)
-    fast_speech: int = 160,  # fast speech threshold (WPM)
+    slow_speech: int = 120,  # slow speech threshold (WPM)
+    fast_speech: int = 150,  # fast speech threshold (WPM)
     pause_threshold: float = 1.0,  # minimum pause to count
     timing_jitter: float = 0.15,  # tolerance to ignore tiny gaps
 ) -> Dict:

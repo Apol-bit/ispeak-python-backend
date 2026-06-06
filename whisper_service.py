@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Minimum RMS to treat audio as containing real speech.
 # 1e-4 was far too low — background noise easily exceeds it.
-RMS_SILENCE_THRESHOLD = 0.04
+RMS_SILENCE_THRESHOLD = 0.01
 
 # Minimum real words required after transcription.
 # Guards against Whisper hallucinating text on noise.
