@@ -278,7 +278,9 @@ def _print_report(result: Dict[str, Any]):
         filler_words = fillers.get("words", [])
         if filler_words:
             for fw in filler_words[:10]:
-                print(f"        - \"{fw['word']}\"  (conf={fw['confidence']:.3f})")
+                start = fw.get('start', 0.0)
+                end = fw.get('end', 0.0)
+                print(f"        - \"{fw['word']}\"  ({start:.2f}s – {end:.2f}s)")
 
     print()
 

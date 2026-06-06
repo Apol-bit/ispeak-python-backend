@@ -39,7 +39,7 @@ _SILENCE_RESPONSE = {
         "problematic_words": [],
     },
     "fillers": {
-        "score": 0,
+        "score": 100,
         "count": 0,
         "rate": 0.0,
         "words": [],
@@ -63,7 +63,7 @@ def _extract_word_segments(segments: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 
 def _extract_word_timestamps(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Extract clean word-level timestamps for the karaoke teleprompter UI."""
+    """Extract clean word-level timestamps for the teleprompter UI."""
     timestamps = []
     for seg in segments:
         for word in seg.get("words", []):
@@ -172,6 +172,8 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
         return dict(_SILENCE_RESPONSE)
 
     # ---------- NORMALIZE LOUDNESS ----------
+    # Keep original for energy analysis (normalization destroys loudness info)
+    y_original = y.copy()
     y = y * (0.05 / rms)
 
     # ---------- TRANSCRIBE ----------
@@ -194,14 +196,15 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
         logger.info("No word-level timestamps returned by Whisper — treating as no speech.")
         return dict(_SILENCE_RESPONSE)
 
-    # ---------- WORD TIMESTAMPS (for Karaoke UI) ----------
+    # ---------- WORD TIMESTAMPS (for Teleprompter UI) ----------
     word_timestamps = _extract_word_timestamps(segments)
 
     # ---------- AUDIO DURATION ----------
     audio_duration = librosa.get_duration(y=y, sr=sr)
 
     # ---------- ENERGY ----------
-    energy_stats = analyze_energy(y, sr)
+    # Use ORIGINAL audio — normalization flattens loudness, making score always 100
+    energy_stats = analyze_energy(y_original, sr)
     energy_score = _compute_energy_score(energy_stats)
 
     # ---------- PACING ----------
@@ -260,7 +263,14 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
             "score":   filler_score,
             "count":   filler_stats.get("filler_count", 0),
             "rate":    filler_stats.get("filler_rate", 0.0),
-            "words":   filler_stats.get("filler_words", []),
+            "words":   [
+                {
+                    "word":  fw.get("word", ""),
+                    "start": round(fw.get("start", 0.0), 3),
+                    "end":   round(fw.get("end", 0.0), 3),
+                }
+                for fw in filler_stats.get("filler_words", [])
+            ],
             "message": filler_stats.get("message", ""),
         },
         # Internal — used by reference comparison

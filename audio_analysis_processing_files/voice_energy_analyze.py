@@ -18,11 +18,10 @@ MIN_FRAMES_FOR_ROBUST_PERCENTILE = 50  # min frames for stable percentile calc
 DEFAULT_FRAME_LENGTH = 1024  # frame size for analysis
 DEFAULT_HOP_LENGTH = 256  # step size between frames
 
-# Raised from 1e-4: background noise RMS easily clears the old value.
-# This must be consistent with RMS_SILENCE_THRESHOLD in whisper_service.py.
-# Note: analyze_energy receives the *normalized* signal (scaled to RMS ~0.05),
-# so this threshold is expressed in normalized amplitude units.
-FRAME_SILENCE_THRESHOLD = 0.02
+# Frame-level silence threshold for per-frame RMS checks.
+# analyze_energy now receives the ORIGINAL (unnormalized) signal,
+# so this threshold must work for raw audio levels from real devices.
+FRAME_SILENCE_THRESHOLD = 0.005
 
 
 # ---------------- GLOBAL ANALYSIS ----------------

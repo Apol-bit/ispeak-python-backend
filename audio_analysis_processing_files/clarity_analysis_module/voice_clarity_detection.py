@@ -11,12 +11,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PronunciationConfig:
-    minimum_confidence: float = 0.75   # minimum acceptable confidence
+    minimum_confidence: float = 0.60   # minimum acceptable confidence
     minimum_word_duration: float = 0.08  # shortest expected word duration
     maximum_word_duration: float = 1.2   # longest expected word duration
 
-    confidence_weight: float = 0.7  # weight for confidence score
-    duration_weight: float = 0.3    # weight for duration score
+    # NOTE: The ONNX Whisper model (phrase-level timestamps) always returns
+    # probability=1.0 for every word, so confidence is not informative.
+    # Duration analysis is the primary signal for pronunciation quality.
+    confidence_weight: float = 0.3  # weight for confidence score
+    duration_weight: float = 0.7    # weight for duration score
 
     # Threshold below which a duration score is flagged as "unusual".
     # Was 0.95 — far too strict, causing normal words to be flagged.
