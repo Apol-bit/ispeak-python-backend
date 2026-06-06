@@ -177,7 +177,13 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     y = y * (0.05 / rms)
 
     # ---------- TRANSCRIBE ----------
-    transcription = model.transcribe(file_path, word_timestamps=True)
+    # Passing an initial_prompt with filler words strongly biases Whisper
+    # against filtering out hesitation sounds like "um" and "uh" from the transcript.
+    transcription = model.transcribe(
+        file_path, 
+        word_timestamps=True,
+        initial_prompt="Umm, uh, hmm, like, you know, ah, ano, parang, yung."
+    )
 
     text: str = transcription.get("text", "").strip()
     segments: List[Dict[str, Any]] = transcription.get("segments", [])
