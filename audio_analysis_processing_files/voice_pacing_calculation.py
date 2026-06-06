@@ -19,8 +19,8 @@ def calculate_pacing(
         raise ValueError("Invalid audio duration")  # prevent division errors
 
     # ---> NEW: Minimum audio length check for pacing <---
-    # You cannot accurately judge someone's "pace" in less than 5 seconds.
-    if audio_duration_seconds < 5.0:
+    # You cannot accurately judge someone's "pace" in less than 2 seconds.
+    if audio_duration_seconds < 2.0:
         logger.info("Audio too short for accurate pacing calculation.")
         return {
             "wpm": 0.0,

@@ -182,8 +182,7 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     transcription = model.transcribe(
         file_path, 
         word_timestamps=True,
-        initial_prompt="Umm, uh, hmm, like, you know.",
-        condition_on_previous_text=False
+        initial_prompt="Umm, uh, hmm, like, you know, ah, ano, parang, yung."
     )
 
     text: str = transcription.get("text", "").strip()
