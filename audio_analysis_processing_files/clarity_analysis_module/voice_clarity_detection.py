@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PronunciationConfig:
     minimum_confidence: float = 0.60   # minimum acceptable confidence
-    minimum_word_duration: float = 0.15  # shortest expected word duration
+    minimum_word_duration: float = 0.05  # shortest expected word duration
     maximum_word_duration: float = 0.8   # longest expected word duration
 
     # NOTE: The ONNX Whisper model (phrase-level timestamps) always returns

@@ -6,8 +6,8 @@ from typing import Dict, List  # type hints
 
 # ---------------- CONFIG ----------------
 
-WHISPER_THRESHOLD_DB = -20.0  # below this = whispering
-SHOUT_THRESHOLD_DB = -8.0  # above this = shouting
+WHISPER_THRESHOLD_DB = -35.0  # below this = whispering
+SHOUT_THRESHOLD_DB = -10.0  # above this = shouting
 
 LOW_VARIATION_DB = 10.0  # variation < 10 dB → speech is flat / dull
 MONOTONE_PITCH_STD_THRESHOLD = 25.0  # pitch std < 25 Hz → monotone

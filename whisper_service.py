@@ -93,15 +93,15 @@ def _compute_pacing_score(pacing_stats: Dict[str, Any]) -> float:
     if status == "Excellent pacing":
         return 100.0
 
-    # Ideal range is 110-160 WPM (from calculate_pacing defaults)
+    # Ideal range is 120-150 WPM (from calculate_pacing defaults)
     if status == "Slow pacing":
-        # 0 WPM → 0, approaching 110 WPM → 100
-        return round(min(100.0, max(0.0, (wpm / 110.0) * 100)), 1)
+        # 0 WPM → 0, approaching 120 WPM → 100
+        return round(min(100.0, max(0.0, (wpm / 120.0) * 100)), 1)
 
     if status == "Fast pacing":
-        # 160 WPM → 100, penalty grows beyond that
-        excess = wpm - 160.0
-        return round(min(100.0, max(0.0, 100.0 - (excess / 160.0) * 100)), 1)
+        # 150 WPM → 100, penalty grows beyond that
+        excess = wpm - 150.0
+        return round(min(100.0, max(0.0, 100.0 - (excess / 150.0) * 100)), 1)
 
     # fallback (e.g. "Analysis failed", "No speech detected")
     return 0.0
@@ -182,7 +182,8 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     transcription = model.transcribe(
         file_path, 
         word_timestamps=True,
-        initial_prompt="Umm, uh, hmm, like, you know, ah, ano, parang, yung."
+        initial_prompt="Umm, uh, hmm, like, you know.",
+        condition_on_previous_text=False
     )
 
     text: str = transcription.get("text", "").strip()
