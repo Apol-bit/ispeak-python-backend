@@ -253,6 +253,9 @@ def analyze_fillers(
     try:
         all_fillers = _detect_fillers_from_text(word_segments)
         logger.info("Dictionary scan found %d filler(s) from text", len(all_fillers))
+        for f in all_fillers:
+            logger.info("  → Detected filler: '%s' at %.2f-%.2f (source=%s)",
+                        f.get("word",""), f.get("start",0), f.get("end",0), f.get("source",""))
 
     except Exception as e:
         logger.error("Filler detection failed: %s", e)
@@ -267,16 +270,18 @@ def analyze_fillers(
     # Sort by time
     all_fillers.sort(key=lambda x: x.get("start", 0.0))
 
-    # Deduplicate overlapping detections
+    # Deduplicate only truly duplicate detections (same word at same timestamp).
+    # Adjacent but distinct filler words (e.g., "um" then "uh") must NOT be removed.
     deduplicated: List[Dict[str, Any]] = []
+    seen_keys: set = set()
     for filler in all_fillers:
-        if not deduplicated:
+        # Create a unique key from the word + start time to catch true duplicates
+        key = (filler.get("word", "").strip().lower(), round(filler.get("start", 0.0), 3))
+        if key not in seen_keys:
+            seen_keys.add(key)
             deduplicated.append(filler)
-            continue
-        prev = deduplicated[-1]
-        if filler["start"] < prev.get("end", 0.0):
-            continue
-        deduplicated.append(filler)
+
+    logger.info("After deduplication: %d filler(s) (was %d)", len(deduplicated), len(all_fillers))
 
     filler_count = len(deduplicated)
     filler_rate = round((filler_count / total_words) * 100, 1) if total_words > 0 else 0.0

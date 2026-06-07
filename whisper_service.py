@@ -179,14 +179,20 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     # ---------- TRANSCRIBE ----------
     # Passing an initial_prompt with filler words strongly biases Whisper
     # against filtering out hesitation sounds like "um" and "uh" from the transcript.
+    # condition_on_previous_text=False prevents Whisper from using its own
+    # previous output to suppress filler words in later segments.
     transcription = model.transcribe(
         file_path, 
         word_timestamps=True,
-        initial_prompt="Umm, uh, hmm, like, you know, ah, ano, parang, yung."
+        initial_prompt="Umm, uh, hmm, like, you know, ah, er, um, ano, parang, yung, basically, actually.",
+        condition_on_previous_text=False,
     )
 
     text: str = transcription.get("text", "").strip()
     segments: List[Dict[str, Any]] = transcription.get("segments", [])
+
+    logger.info("=== WHISPER TRANSCRIPTION ===")
+    logger.info("Full text: %s", text)
 
     # ---------- HALLUCINATION GUARD ----------
     word_count = len(text.split())
@@ -201,6 +207,12 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     if not word_segments:
         logger.info("No word-level timestamps returned by Whisper — treating as no speech.")
         return dict(_SILENCE_RESPONSE)
+
+    # Log each word for debugging filler detection
+    logger.info("=== WORD SEGMENTS (%d words) ===", len(word_segments))
+    for i, ws in enumerate(word_segments):
+        logger.info("  [%d] '%s' (%.2f-%.2f, conf=%.3f)",
+                    i, ws.get('text','').strip(), ws.get('start',0), ws.get('end',0), ws.get('confidence',0))
 
     # ---------- WORD TIMESTAMPS (for Teleprompter UI) ----------
     word_timestamps = _extract_word_timestamps(segments)
