@@ -177,16 +177,9 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     y = y * (0.05 / rms)
 
     # ---------- TRANSCRIBE ----------
-    # Passing an initial_prompt with filler words strongly biases Whisper
-    # against filtering out hesitation sounds like "um" and "uh" from the transcript.
-    # condition_on_previous_text=False prevents Whisper from using its own
-    # previous output to suppress filler words in later segments.
-    transcription = model.transcribe(
-        file_path, 
-        word_timestamps=True,
-        initial_prompt="Umm, uh, hmm, like, you know, ah, er, um, ano, parang, yung, basically, actually.",
-        condition_on_previous_text=False,
-    )
+    # The ONNX pipeline in model.py handles anti-hallucination parameters
+    # (no_repeat_ngram_size, repetition_penalty, language, task) internally.
+    transcription = model.transcribe(file_path)
 
     text: str = transcription.get("text", "").strip()
     segments: List[Dict[str, Any]] = transcription.get("segments", [])
@@ -194,7 +187,7 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
     logger.info("=== WHISPER TRANSCRIPTION ===")
     logger.info("Full text: %s", text)
 
-    # ---------- HALLUCINATION GUARD ----------
+    # ---------- HALLUCINATION GUARD 1: Too few words ----------
     word_count = len(text.split())
     if not text or word_count < MIN_WORD_COUNT:
         logger.info(
@@ -202,6 +195,27 @@ def _run_analysis(file_path: str, y: np.ndarray, sr: int, model) -> Dict[str, An
             word_count, text,
         )
         return dict(_SILENCE_RESPONSE)
+
+    # ---------- HALLUCINATION GUARD 2: Impossible word density ----------
+    # Max plausible speaking rate is ~250 WPM. If the transcript implies
+    # more than 300 WPM, the excess is almost certainly hallucinated.
+    audio_dur_sec = librosa.get_duration(y=y, sr=sr)
+    if audio_dur_sec > 0:
+        implied_wpm = (word_count / audio_dur_sec) * 60
+        if implied_wpm > 300:
+            max_words = int((audio_dur_sec / 60) * 300)
+            max_words = max(max_words, MIN_WORD_COUNT)
+            logger.warning(
+                "Implied WPM %.0f exceeds 300 — trimming transcript from %d to %d words.",
+                implied_wpm, word_count, max_words,
+            )
+            text = " ".join(text.split()[:max_words])
+            # Also trim the segment words
+            for seg in segments:
+                seg_words = seg.get("words", [])
+                if len(seg_words) > max_words:
+                    seg["words"] = seg_words[:max_words]
+                    seg["text"] = text
 
     word_segments = _extract_word_segments(segments)
     if not word_segments:
